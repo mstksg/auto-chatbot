@@ -1,4 +1,7 @@
-module Auto.Chatbot.Backend.Stdin where
+module Auto.Chatbot.Backend.Stdin (
+    stdinLoop
+  , stdinLoopChron
+  ) where
 
 import Auto.Chatbot.Core
 import Control.Auto
@@ -24,36 +27,29 @@ stdinLoop nick chan = void . run getFirstInp processOutp
       getInput nick chan
 
 stdinLoopChron :: Nick -> Channel -> Int -> ChatBot IO -> IO ()
-stdinLoopChron nick channel chronRate chatbot0 = do
-    inputVar <- newEmptyMVar :: IO (MVar (Either ChronEvent InMessage))
-    exitVar  <- newEmptyMVar :: IO (MVar ())
-    void . forkIO $ processInput inputVar chatbot0
-    void . forkIO $ fromStdIn inputVar exitVar
-    void . forkIO $ fromClock inputVar
+stdinLoopChron nick channel chronRate chatbot = do
+    inputChan <- newChan      :: IO (Chan (Either ChronEvent InMessage))
+    exitVar   <- newEmptyMVar :: IO (MVar ())
+    void . forkIO $ runOnChanM id processOutput inputChan chatbot
+    void . forkIO $ fromStdIn inputChan exitVar
+    void . forkIO $ fromClock inputChan
     takeMVar exitVar
   where
-    processInput :: MVar (Either ChronEvent InMessage) -> ChatBot IO
-                 -> IO ()
-    processInput inputVar chatbot1 = do
-      input <- takeMVar inputVar
-      (OutMessages out, chatbot2) <- stepAuto chatbot1 input
-      mapM_ (mapM_ putStrLn) out
-      processInput inputVar chatbot2
-    fromStdIn :: MVar (Either ChronEvent InMessage) -> MVar ()
-              -> IO ()
-    fromStdIn inputVar exitVar = do
+    processOutput :: OutMessages -> IO Bool
+    processOutput (OutMessages out) = True <$ mapM_ (mapM_ putStrLn) out
+    fromStdIn inputChan exitVar = do
         input <- getInput nick channel
         case input of
           Just inp -> do
-            putMVar inputVar inp
-            fromStdIn inputVar exitVar
+            writeChan inputChan inp
+            fromStdIn inputChan exitVar
           Nothing ->
             putMVar exitVar ()
-    fromClock :: MVar (Either ChronEvent InMessage) -> IO ()
-    fromClock inputVar = forever $ do
+    fromClock :: Chan (Either ChronEvent InMessage) -> IO ()
+    fromClock inputChan = forever $ do
         threadDelay chronRate
         t <- getCurrentTime
-        putMVar inputVar (Left t)
+        writeChan inputChan (Left t)
 
 getInput :: Nick -> Channel -> IO (Maybe (Either ChronEvent InMessage))
 getInput nick chan = do
