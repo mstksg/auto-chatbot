@@ -17,7 +17,8 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Network.Auto.ChatBot
+  exposed-modules:     Auto.Chatbot
+                       Auto.Chatbot.Backend.Stdin
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.7 && <4.8

@@ -1,6 +1,6 @@
 {-# LANGUAGE Arrows #-}
 
-module Network.Auto.ChatBot.Core (
+module Auto.Chatbot.Core (
     InMessage(..)
   , OutMessages(..)
   , Message
