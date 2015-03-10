@@ -6,7 +6,7 @@ import Control.Arrow
 import Control.Auto.Run
 import Control.Concurrent
 import Control.Exception
-import Control.Monad            (void, forever)
+import Control.Monad            (void, forever, when)
 import Data.Foldable            (forM_)
 import Data.Text
 import Data.Text.Encoding
@@ -17,13 +17,17 @@ import qualified Data.Map       as M
 
 withIrcConf :: IrcConfig -> Bool -> Int -> ChatBot IO -> IO ()
 withIrcConf ircconf debug chronRate chatbot = do
+
     inputChan <- newChan :: IO (Chan (Either ChronEvent InMessage))
+
     let events   = cEvents ircconf ++ [ Privmsg (onMessage inputChan) ]
         ircconf' = ircconf { cEvents = events }
     connectResult <- connect ircconf' True debug
+
     case connectResult of
       Left e       ->
         throw e
+
       Right server -> do
         _ <- forkIO $
           runOnChanM id (processOutput server) inputChan chatbot
@@ -33,6 +37,7 @@ withIrcConf ircconf debug chronRate chatbot = do
           forever (threadDelay 1000000000)
           putMVar exitVar ()
         takeMVar exitVar    -- TODO: Find some way to exit?
+
   where
     processOutput :: MIrc -> OutMessages -> IO Bool
     processOutput server (OutMessages outs) = do
