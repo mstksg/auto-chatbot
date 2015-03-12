@@ -30,9 +30,9 @@ stdinLoopChron :: Nick -> Channel -> Int -> ChatBot IO -> IO ()
 stdinLoopChron nick channel chronRate chatbot = do
     inputChan <- newChan      :: IO (Chan (Either ChronEvent InMessage))
     exitVar   <- newEmptyMVar :: IO (MVar ())
-    void . forkIO $ runOnChanM id processOutput inputChan chatbot
-    void . forkIO $ fromStdIn inputChan exitVar
-    void . forkIO $ fromClock inputChan
+    void . forkIO . void $ runOnChanM id processOutput inputChan chatbot
+    void . forkIO        $ fromStdIn inputChan exitVar
+    void . forkIO        $ fromClock inputChan
     takeMVar exitVar
   where
     processOutput :: OutMessages -> IO Bool

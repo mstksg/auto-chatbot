@@ -8,7 +8,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad            (void, forever, when)
 import Data.Foldable            (forM_)
-import Data.Text
+import Data.Text hiding         (length)
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
 import Data.Time
@@ -19,8 +19,10 @@ withIrcConf :: IrcConfig -> Bool -> Int -> ChatBot IO -> IO ()
 withIrcConf ircconf debug chronRate chatbot = do
 
     inputChan <- newChan :: IO (Chan (Either ChronEvent InMessage))
+    startClock <- newEmptyMVar :: IO (MVar ())
 
-    let events   = cEvents ircconf ++ [ Privmsg (onMessage inputChan) ]
+    let events   = cEvents ircconf ++ [ Privmsg (onMessage inputChan)
+                                      , Join (clockStart startClock) ]
         ircconf' = ircconf { cEvents = events }
     connectResult <- connect ircconf' True debug
 
@@ -29,9 +31,9 @@ withIrcConf ircconf debug chronRate chatbot = do
         throw e
 
       Right server -> do
-        _ <- forkIO $
+        _ <- forkIO . void $
           runOnChanM id (processOutput server) inputChan chatbot
-        _ <- forkIO $ onClock inputChan
+        _ <- forkIO $ onClock startClock inputChan
         exitVar <- newEmptyMVar :: IO (MVar ())
         void . forkIO $ do
           forever (threadDelay 1000000000)
@@ -70,8 +72,18 @@ withIrcConf ircconf debug chronRate chatbot = do
           time <- getCurrentTime
           writeChan inputChan . Right $ InMessage nick msg src time
 
-    onClock :: Chan (Either ChronEvent InMessage) -> IO ()
-    onClock inputChan = forever $ do
+    clockStart :: MVar () -> EventFunc
+    clockStart startClock server _ = do
+      goAhead <- isEmptyMVar startClock
+      when goAhead $ do
+        joinCoint <- length <$> getChannels server
+        when (joinCoint >= length (cChannels ircconf)) $ do
+          when debug (print "All channels joined!")
+          void $ tryPutMVar startClock ()
+
+    onClock :: MVar () -> Chan (Either ChronEvent InMessage) -> IO ()
+    onClock startClock inputChan = forever $ do
+      readMVar startClock
       threadDelay chronRate
       t <- getCurrentTime
       writeChan inputChan (Left t)
