@@ -23,7 +23,7 @@ library
                      , Auto.Chatbot.Backend.IRC
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7 && <5
                      , auto
                      , containers
                      , simpleirc
