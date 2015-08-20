@@ -8,7 +8,7 @@ import Control.Concurrent
 import Control.Exception
 import Control.Monad            (void, forever, when)
 import Data.Foldable            (forM_)
-import Data.Text hiding         (length)
+import Data.Text hiding         (length, unlines)
 import Data.Text.Encoding
 import Data.Text.Encoding.Error
 import Data.Time
@@ -21,8 +21,12 @@ withIrcConf ircconf debug chronRate chatbot = do
     inputChan <- newChan :: IO (Chan (Either ChronEvent InMessage))
     startClock <- newEmptyMVar :: IO (MVar ())
 
+    exitVar <- newEmptyMVar :: IO (MVar ())
+
     let events   = cEvents ircconf ++ [ Privmsg (onMessage inputChan)
-                                      , Join (clockStart startClock) ]
+                                      , Join (clockStart startClock)
+                                      , Disconnect (recon startClock exitVar 5)
+                                      ]
         ircconf' = ircconf { cEvents = events }
     connectResult <- connect ircconf' True debug
 
@@ -34,9 +38,8 @@ withIrcConf ircconf debug chronRate chatbot = do
         _ <- forkIO . void $
           runOnChanM id (processOutput server) inputChan chatbot
         _ <- forkIO $ onClock startClock inputChan
-        exitVar <- newEmptyMVar :: IO (MVar ())
         void . forkIO $ do
-          forever (threadDelay 1000000000)
+          forever (threadDelay 1000000000000)
           putMVar exitVar ()
         takeMVar exitVar    -- TODO: Find some way to exit?
 
@@ -93,6 +96,30 @@ withIrcConf ircconf debug chronRate chatbot = do
     unicodeException :: String -> UnicodeException -> String
     unicodeException d e = "Error on decoding message " ++ d
                         ++ ": " ++ show e
+
+    recon :: MVar () -> MVar () -> Int -> MIrc -> IO ()
+    recon startClock exitVar del mirc = go del
+      where
+        go d = do
+          takeMVar startClock
+          threadDelay (60 * d * sec)
+          connectResult <- reconnect mirc
+          case connectResult of
+            Left e | d < 720   -> do
+                       putStrLn $ "Disconnected, and reconnect failed.  Trying again in " ++ show (d * 2) ++ " minutes."
+                       go (d * 2)
+                   | otherwise -> do
+                       putStrLn $ unlines [ "Something catastrophic has happened: " ++ show e
+                                          , "I'm sorry."]
+                       putMVar exitVar ()
+            Right _ -> do
+              putStrLn "Disconnected, but crisis averted."
+              putMVar startClock ()
+
+
+
+    sec :: Int
+    sec = 1000000
 
 withIrc :: String -> Nick -> [Channel] -> Bool -> Int
         -> ChatBot IO -> IO ()
